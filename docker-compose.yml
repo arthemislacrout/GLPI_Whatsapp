@@ -61,8 +61,8 @@ services:
       - DB_PASSWORD=123456
     restart: always
     depends_on:
-      mariadb:
-        condition: service_healthy
+      -  mariadb
+    
     links:
       - mariadb
     labels:
