@@ -1,0 +1,166 @@
+version: "3.2"
+
+services:
+  mariadb:
+    image: mariadb:10
+    container_name: mariadb
+    hostname: mariadb
+    volumes:
+      - /var/lib/mysql:/var/lib/mysql
+    environment:
+      - MARIADB_ROOT_PASSWORD=123456
+    restart: always
+    healthcheck:
+      test: mysqladmin ping -h 127.0.0.1 -u root -p$$MARIADB_ROOT_PASSWORD
+      start_period: 5s
+      interval: 5s
+      timeout: 5s
+      retries: 100
+
+
+  reverse-proxy:
+    image: traefik:v2.11
+    command:
+      - --log.level=DEBUG
+      - --api.insecure=true
+      - --providers.docker
+      - --certificatesresolvers.lets-encrypt.acme.email=suporte@citrait.com.br
+      - --certificatesresolvers.lets-encrypt.acme.storage=/etc/letsencrypt/acme.json
+      - --certificatesresolvers.lets-encrypt.acme.httpchallenge=true
+      - --certificatesresolvers.lets-encrypt.acme.httpchallenge.entrypoint=web
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ./acme.json:/acme.json
+      - letsencrypt:/etc/letsencrypt/
+
+
+  glpi:
+    build:
+      context: ./glpi
+      dockerfile: Dockerfile
+      # for glpi < 10.0.7 use the dockerfile bellow
+      #dockerfile: glpi/Dockerfile-php7
+    container_name : glpi
+    hostname: glpi
+    volumes:
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+      - glpi_www:/var/www/html/glpi
+    environment:
+      - TIMEZONE=America/sao_paulo
+      - VERSION_GLPI=10.0.14
+      - DB_HOST=mariadb
+      - DB_PORT=3306
+      - DB_DATABASE=glpi_dev
+      - DB_USER=root
+      - DB_PASSWORD=123456
+    restart: always
+    depends_on:
+      mariadb:
+        condition: service_healthy
+    links:
+      - mariadb
+    labels:
+      - traefik.http.routers.glpi.rule=Host(`glpi.empresa.com.br`)
+      - traefik.http.routers.glpi.tls=true
+      - traefik.http.routers.glpi.tls.certresolver=lets-encrypt
+      - traefik.http.routers.glpi.tls.domains[0].main=glpi.empresa.com.br
+
+
+  evolution_api:
+    image: atendai/evolution-api
+    container_name: evolution
+    hostname: evolution
+    restart: always
+    volumes:
+      - evolution_instances:/evolution/instances
+      - evolution_store:/evolution/store
+    env_file:
+      - evolution_api/.env
+    command: ['node', './dist/src/main.js']
+    expose:
+      - "8080"
+    labels:
+      - traefik.http.routers.evolution.rule=Host(`whats.empresa.com.br`)
+      - traefik.http.routers.evolution.tls=true
+      - traefik.http.routers.evolution.tls.certresolver=lets-encrypt
+      - traefik.http.routers.evolution.tls.domains[0].main=whats.empresa.com.br
+
+
+
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n
+    container_name: n8n
+    hostname: n8n
+    restart: always
+    volumes:
+      - n8n_data:/home/node/.n8n
+    labels:
+      - traefik.http.routers.n8n.rule=Host(`n8n.empresa.com.br`)
+      - traefik.http.routers.n8n.tls=true
+      - traefik.http.routers.n8n.tls.certresolver=lets-encrypt
+      - traefik.http.routers.n8n.tls.domains[0].main=n8n.empresa.com.br
+      - traefik.http.services.n8n.loadbalancer.server.port=5678
+    expose:
+      - "5678:5678"
+    ports:
+      - "5678:5678"
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    environment:
+      - N8N_SECURE_COOKIE=false
+
+
+  typebot-db:
+    image: postgres:14-alpine
+    restart: always
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_DB=typebot
+      - POSTGRES_PASSWORD=typebot
+
+
+  typebot-builder:
+    image: baptistearno/typebot-builder:latest
+    container_name: typebot
+    hostname: typebot
+    restart: always
+    depends_on:
+      - typebot-db
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    env_file: typebot/.env
+    labels:
+      - traefik.http.routers.typebot-builder.rule=Host(`typebot.empresa.com.br`)
+      - traefik.http.routers.typebot-builder.tls=true
+      - traefik.http.routers.typebot-builder.tls.certresolver=lets-encrypt
+      - traefik.http.routers.typebot-builder.tls.domains[0].main=typebot.empresa.com.br
+
+  typebot-viewer:
+    image: baptistearno/typebot-viewer:latest
+    container_name: bot
+    hostname: bot
+    restart: always
+    env_file: typebot/.env
+    labels:
+      - traefik.http.routers.bot.rule=Host(`bot.empresa.com.br`)
+      - traefik.http.routers.bot.tls=true
+      - traefik.http.routers.bot.tls.certresolver=lets-encrypt
+      - traefik.http.routers.bot.tls.domains[0].main=bot.empresa.com.br
+
+
+
+volumes:
+  glpi_www:
+  evolution_instances:
+  evolution_store:
+  db-data:
+  letsencrypt:
+  n8n_data:

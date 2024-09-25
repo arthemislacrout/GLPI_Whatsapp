@@ -1,0 +1,10 @@
+{
+  "extends": "@typebot.io/tsconfig/nextjs.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["src/*"]
+    }
+  },
+  "include": ["next-env.d.ts", "tolgee.d.ts", "**/*.ts", "**/*.tsx"]
+}
