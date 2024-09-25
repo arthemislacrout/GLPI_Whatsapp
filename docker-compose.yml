@@ -12,7 +12,7 @@ services:
     restart: always
     healthcheck:
       test: mysqladmin ping -h 127.0.0.1 -u root -p$$MARIADB_ROOT_PASSWORD
-      start_period: 5s
+      #start_period: 5s
       interval: 5s
       timeout: 5s
       retries: 100
